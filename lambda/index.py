@@ -31,7 +31,7 @@ def lambda_handler(event, context):
         
         # カスタムAPIのエンドポイントを設定
         # Colabのログに表示されたURLを使用（ChatエンドポイントはSwagger UIで確認）
-        api_url = "https://51f3-34-82-102-252.ngrok-free.app/chat"
+        api_url = "https://51f3-34-82-102-252.ngrok-free.app"
         
         # APIに送信するデータを準備
         # 会話履歴を含める形式で送信
