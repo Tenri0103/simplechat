@@ -14,8 +14,19 @@ def lambda_handler(event, context):
         
         print("Processing message:", message)
         
-        # APIエンドポイント
+        # APIエンドポイントの設定
         api_url = "https://51f3-34-82-102-252.ngrok-free.app/generate"
+
+        # リクエストヘッダーにSwagger UIのcurlコマンドと同じものを使用
+        req = urllib.request.Request(
+            api_url,
+            data=encoded_data,
+            headers={
+                'Content-Type': 'application/json',
+                'accept': 'application/json'  # このヘッダーを追加
+            },
+            method='POST'
+        )
         
         # シンプルなリクエスト形式
         request_data = {
