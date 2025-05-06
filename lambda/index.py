@@ -1,22 +1,22 @@
-# lambda/index.py
 import json
 import os
 import urllib.request
 import re
-from botocore.exceptions import ClientError  # 既存のインポートはそのままでも問題ありません
+from botocore.exceptions import ClientError
 
-# Lambda コンテキストからリージョンを抽出する関数（既存の関数はそのまま残してもOK）
+# Lambda コンテキストからリージョンを抽出する関数
 def extract_region_from_arn(arn):
+    # ARN 形式: arn:aws:lambda:region:account-id:function:function-name
     match = re.search('arn:aws:lambda:([^:]+):', arn)
     if match:
         return match.group(1)
-    return "us-east-1" 
+    return "us-east-1"  # デフォルト値
 
 def lambda_handler(event, context):
     try:
         print("Received event:", json.dumps(event))
         
-        # Cognitoで認証されたユーザー情報を取得（既存コードをそのまま利用）
+        # Cognitoで認証されたユーザー情報を取得
         user_info = None
         if 'requestContext' in event and 'authorizer' in event['requestContext']:
             user_info = event['requestContext']['authorizer']['claims']
@@ -30,14 +30,16 @@ def lambda_handler(event, context):
         print("Processing message:", message)
         
         # カスタムAPIのエンドポイントを設定
-        # Colabのログに表示されたURLを使用（ChatエンドポイントはSwagger UIで確認）
-        api_url = "api_url = "https://51f3-34-82-102-252.ngrok-free.app/generate""
+        # Swagger UIで確認した正しいエンドポイントを使用
+        api_url = "https://51f3-34-82-102-252.ngrok-free.app/generate"
         
-        # APIに送信するデータを準備
-        # 会話履歴を含める形式で送信
+        # Swagger UIで確認した正しいリクエスト形式を使用
         request_data = {
-            "message": message,
-            "conversationHistory": conversation_history
+            "prompt": message,  # "message"ではなく"prompt"を使用
+            "max_new_tokens": 512,
+            "do_sample": True,
+            "temperature": 0.7,
+            "top_p": 0.9
         }
         
         # JSONデータのエンコード
@@ -58,8 +60,11 @@ def lambda_handler(event, context):
                 api_response = json.loads(response_data)
                 
                 # APIからの応答を取得
-                # 注意: APIのレスポンス形式に合わせて調整が必要かもしれません
-                assistant_response = api_response.get('response', '')
+                # 注意: レスポンスの形式はAPIの仕様に合わせて調整
+                assistant_response = api_response.get('generated_text', '')
+                # レスポンス形式が異なる場合は、適切なキーを使用
+                if not assistant_response and 'response' in api_response:
+                    assistant_response = api_response.get('response', '')
                 
                 # 会話履歴の更新（元のコードと同様の形式を維持）
                 messages = conversation_history.copy()
