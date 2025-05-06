@@ -1,37 +1,22 @@
 # lambda/index.py
 import json
 import os
-import boto3
-import re  # 正規表現モジュールをインポート
-from botocore.exceptions import ClientError
+import urllib.request
+import re
+from botocore.exceptions import ClientError  # 既存のインポートはそのままでも問題ありません
 
-
-# Lambda コンテキストからリージョンを抽出する関数
+# Lambda コンテキストからリージョンを抽出する関数（既存の関数はそのまま残してもOK）
 def extract_region_from_arn(arn):
-    # ARN 形式: arn:aws:lambda:region:account-id:function:function-name
     match = re.search('arn:aws:lambda:([^:]+):', arn)
     if match:
         return match.group(1)
-    return "us-east-1"  # デフォルト値
-
-# グローバル変数としてクライアントを初期化（初期値）
-bedrock_client = None
-
-# モデルID
-MODEL_ID = os.environ.get("MODEL_ID", "us.amazon.nova-lite-v1:0")
+    return "us-east-1" 
 
 def lambda_handler(event, context):
     try:
-        # コンテキストから実行リージョンを取得し、クライアントを初期化
-        global bedrock_client
-        if bedrock_client is None:
-            region = extract_region_from_arn(context.invoked_function_arn)
-            bedrock_client = boto3.client('bedrock-runtime', region_name=region)
-            print(f"Initialized Bedrock client in region: {region}")
-        
         print("Received event:", json.dumps(event))
         
-        # Cognitoで認証されたユーザー情報を取得
+        # Cognitoで認証されたユーザー情報を取得（既存コードをそのまま利用）
         user_info = None
         if 'requestContext' in event and 'authorizer' in event['requestContext']:
             user_info = event['requestContext']['authorizer']['claims']
@@ -43,88 +28,74 @@ def lambda_handler(event, context):
         conversation_history = body.get('conversationHistory', [])
         
         print("Processing message:", message)
-        print("Using model:", MODEL_ID)
         
-        # 会話履歴を使用
-        messages = conversation_history.copy()
+        # カスタムAPIのエンドポイントを設定
+        # Colabのログに表示されたURLを使用（ChatエンドポイントはSwagger UIで確認）
+        api_url = "https://51f3-34-82-102-252.ngrok-free.app/chat"
         
-        # ユーザーメッセージを追加
-        messages.append({
-            "role": "user",
-            "content": message
-        })
-        
-        # Nova Liteモデル用のリクエストペイロードを構築
-        # 会話履歴を含める
-        bedrock_messages = []
-        for msg in messages:
-            if msg["role"] == "user":
-                bedrock_messages.append({
-                    "role": "user",
-                    "content": [{"text": msg["content"]}]
-                })
-            elif msg["role"] == "assistant":
-                bedrock_messages.append({
-                    "role": "assistant", 
-                    "content": [{"text": msg["content"]}]
-                })
-        
-        # invoke_model用のリクエストペイロード
-        request_payload = {
-            "messages": bedrock_messages,
-            "inferenceConfig": {
-                "maxTokens": 512,
-                "stopSequences": [],
-                "temperature": 0.7,
-                "topP": 0.9
-            }
+        # APIに送信するデータを準備
+        # 会話履歴を含める形式で送信
+        request_data = {
+            "message": message,
+            "conversationHistory": conversation_history
         }
         
-        print("Calling Bedrock invoke_model API with payload:", json.dumps(request_payload))
+        # JSONデータのエンコード
+        encoded_data = json.dumps(request_data).encode('utf-8')
         
-        # invoke_model APIを呼び出し
-        response = bedrock_client.invoke_model(
-            modelId=MODEL_ID,
-            body=json.dumps(request_payload),
-            contentType="application/json"
+        # HTTPリクエストの作成
+        req = urllib.request.Request(
+            api_url,
+            data=encoded_data,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
         )
         
-        # レスポンスを解析
-        response_body = json.loads(response['body'].read())
-        print("Bedrock response:", json.dumps(response_body, default=str))
-        
-        # 応答の検証
-        if not response_body.get('output') or not response_body['output'].get('message') or not response_body['output']['message'].get('content'):
-            raise Exception("No response content from the model")
-        
-        # アシスタントの応答を取得
-        assistant_response = response_body['output']['message']['content'][0]['text']
-        
-        # アシスタントの応答を会話履歴に追加
-        messages.append({
-            "role": "assistant",
-            "content": assistant_response
-        })
-        
-        # 成功レスポンスの返却
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-                "Access-Control-Allow-Methods": "OPTIONS,POST"
-            },
-            "body": json.dumps({
-                "success": True,
-                "response": assistant_response,
-                "conversationHistory": messages
-            })
-        }
+        # APIを呼び出し、レスポンスを取得
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                response_data = response.read()
+                api_response = json.loads(response_data)
+                
+                # APIからの応答を取得
+                # 注意: APIのレスポンス形式に合わせて調整が必要かもしれません
+                assistant_response = api_response.get('response', '')
+                
+                # 会話履歴の更新（元のコードと同様の形式を維持）
+                messages = conversation_history.copy()
+                messages.append({
+                    "role": "user",
+                    "content": message
+                })
+                messages.append({
+                    "role": "assistant",
+                    "content": assistant_response
+                })
+                
+                # 成功レスポンスの返却（元のフォーマットを維持）
+                return {
+                    "statusCode": 200,
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Allow-Headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                        "Access-Control-Allow-Methods": "OPTIONS,POST"
+                    },
+                    "body": json.dumps({
+                        "success": True,
+                        "response": assistant_response,
+                        "conversationHistory": messages
+                    })
+                }
+                
+        except urllib.error.URLError as e:
+            print(f"API request error: {str(e)}")
+            raise Exception(f"API request failed: {str(e)}")
         
     except Exception as error:
         print("Error:", str(error))
         
+        # エラーレスポンス（元のコードと同様）
         return {
             "statusCode": 500,
             "headers": {
